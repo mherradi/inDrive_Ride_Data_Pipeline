@@ -1,0 +1,59 @@
+name: inDrive
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: inDrive-postgres
+    environment:
+      POSTGRES_DB: inDrive
+      POSTGRES_USER: inDrive
+      POSTGRES_PASSWORD: inDrive
+    volumes:
+      - pgdata:/var/lib/postgresql/data                            # data survives container restarts
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql   # creates raw / staging / mart (first start only)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inDrive -d inDrive"]
+      interval: 3s
+      retries: 20
+
+  adminer:
+    image: adminer
+    container_name: inDrive-adminer
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on: [postgres]
+    ports:
+      - "8085:8080"        # http://localhost:8085
+
+  airflow:
+    image: apache/airflow:2.9.3
+    container_name: inDrive-airflow
+    command: standalone
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+
+      AIRFLOW__WEBSERVER__WORKERS: "1"
+      AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT: "300"
+
+      PG_HOST: postgres
+      PG_DB: inDrive
+      PG_USER: inDrive
+      PG_PASSWORD: inDrive
+      VERIFY_SSL: "true"
+      MOCKAROO_URL: ${MOCKAROO_URL:-}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - airflow_home:/opt/airflow       # keeps airflow.db (run history) and the admin password
+      - ./dags:/opt/airflow/dags
+      - ./sql:/opt/airflow/sql
+      - ./data:/opt/airflow/data
+    ports:
+      - "8081:8080"        # http://localhost:8081
+
+volumes:
+  pgdata:
+  airflow_home:
